@@ -1,0 +1,4 @@
+[[hooks]]
+name="PreCommit"
+create=true
+relink=true
