@@ -3,6 +3,7 @@
 - Create symbolic links for your existing git hooks and track them with git version control.
 - Full control over what git hooks should be tracked, and how file / symlink conflicts should be handled.
 - [WIP] Presets allow for defining environment specific rules for tracking / setting git hooks.
+- [WIP] Non destructive operations, existing hooks are backed up in dedicated git stashes allowing for recovery.
 - written in Rust for optimal performance
 
 Inspired by:
