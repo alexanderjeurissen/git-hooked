@@ -1,5 +1,3 @@
-#  WIP: git-hooked
-
 ![image](https://github.com/alexanderjeurissen/git-hooked/blob/main/public/assets/logo.png?raw=true)
 
 - Create symbolic links for your existing git hooks and track them with git version control.
