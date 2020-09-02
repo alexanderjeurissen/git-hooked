@@ -3,6 +3,7 @@ extern crate pretty_env_logger;
 mod config;
 mod git;
 mod hook;
+mod path_utils;
 
 use failure::Error;
 

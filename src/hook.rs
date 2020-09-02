@@ -11,6 +11,10 @@ use log::{debug, error, info, warn};
 use std::os::unix::fs;
 
 use crate::config::Config;
+use crate::path_utils::PathResult::{
+    ExistingDir, ExistingFile, ExistingLink, InvalidLink, NonExisting, Unknown,
+};
+use crate::path_utils::{visit_path, PathResult};
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -72,20 +76,6 @@ arg_enum! {
     }
 }
 
-// NOTE: enum used te denote the state of a hook destination
-// ExistingFile: there is a file at the hook destination
-// ExistingLink: there is a symlink at the hook destination
-// InvalidLink: there is a broken symlink at the hook destitaniot
-#[derive(StructOpt, Debug, Clone, PartialEq)]
-enum PathState {
-    ExistingFile,
-    ExistingDir,
-    ExistingLink,
-    InvalidLink,
-    Unknown,
-    None,
-}
-
 // NOTE: create symlinks for existing files in git_hooks folder
 pub fn push(config: &Config, root_path: &String) -> Result<(), Error> {
     match &config.hooks {
@@ -107,22 +97,22 @@ pub fn pull(config: &Config, root_path: &String) -> Result<(), Error> {
     match &config.hooks {
         Some(hooks) => {
             let destination_path: PathBuf = git_hooked_path(&root_path, None)?;
-            let destination_path_state: PathState = inspect_path(&destination_path)?;
+            let destination_path_state: PathResult = visit_path(&destination_path)?;
 
             match destination_path_state {
-                PathState::ExistingFile | PathState::ExistingLink | PathState::InvalidLink => {
+                ExistingFile | ExistingLink | InvalidLink => {
                     bail!("git_hooked destination path already exists")
                 }
 
-                PathState::Unknown => bail!("git_hooked destination path unknown"),
-                PathState::None => {
+                Unknown => bail!("git_hooked destination path unknown"),
+                NonExisting => {
                     std::fs::create_dir(&destination_path);
 
                     hooks
                         .into_iter()
                         .try_for_each(|hook: &Hook| pull_hook(&root_path, &hook))?;
                 }
-                PathState::ExistingDir => {
+                ExistingDir => {
                     hooks
                         .into_iter()
                         .try_for_each(|hook: &Hook| pull_hook(&root_path, &hook))?;
@@ -142,19 +132,19 @@ fn push_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
         let source_path: PathBuf = git_hooked_path(&root_path, Some(&hook))?;
         let destination_path: PathBuf = git_hooks_path(&root_path, &hook)?;
 
-        let hook_destination_result: PathState = inspect_path(&destination_path)?;
+        let hook_destination_result: PathResult = visit_path(&destination_path)?;
 
         info!("Creating symlink for {:?}..", &hook.name);
         debug!("{0:?} -> {1:?}", &source_path, &destination_path);
 
         match hook_destination_result {
             // NOTE: we can safely create a symlink, destination is up for grabs
-            PathState::None => {
+            NonExisting => {
                 fs::symlink(&source_path, &destination_path)?;
             }
             // NOTE: There is an existing file or link at the destination
             // We can only create a symlink if the `force` option is set
-            PathState::ExistingFile | PathState::ExistingLink => {
+            ExistingFile | ExistingLink => {
                 if hook.force {
                     warn!("Destination already exists, `force` option set, destination will be overwritten..");
                     std::fs::remove_file(&destination_path)?;
@@ -165,7 +155,7 @@ fn push_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
             }
             // NOTE: There is an existing directory at the destination
             // We can only create a symlink if the `force` option is set
-            PathState::ExistingDir => {
+            ExistingDir => {
                 if hook.force {
                     warn!("Destination already exists, `force` option set, destination will be overwritten..");
                     std::fs::remove_dir(&destination_path)?;
@@ -176,7 +166,7 @@ fn push_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
             }
             // NOTE: There is an existing invalid symlink at the destination
             // We can only create a symlink if the `relink` option is set
-            PathState::InvalidLink => {
+            InvalidLink => {
                 if hook.relink {
                     warn!("Destination already exists, `relink` option set, destination will be overwritten..");
                     std::fs::remove_file(&destination_path)?;
@@ -185,7 +175,7 @@ fn push_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
                     error!("Destination already exists. `force` option *not* set. Did not create {:?} symlink.", hook.name);
                 }
             }
-            PathState::Unknown => {
+            Unknown => {
                 error!("destination is unknown");
             }
         }
@@ -203,23 +193,20 @@ fn pull_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
     let git_hooks_path: PathBuf = git_hooks_path(&root_path, &hook)?;
     let git_hooked_path: PathBuf = git_hooked_path(&root_path, Some(&hook))?;
 
-    let git_hooks_path_state: PathState = inspect_path(&git_hooks_path)?;
+    let git_hooks_path_state: PathResult = visit_path(&git_hooks_path)?;
     info!("Adding git hook {:?} to version control..", &hook.name);
     debug!("mv {0:?} -> {1:?}", &git_hooks_path, &git_hooked_path);
     match git_hooks_path_state {
-        PathState::ExistingFile => {
-            let git_hooked_path_state: PathState = inspect_path(&git_hooked_path)?;
+        ExistingFile => {
+            let git_hooked_path_state: PathResult = visit_path(&git_hooked_path)?;
             match git_hooked_path_state {
-                PathState::ExistingFile
-                | PathState::ExistingLink
-                | PathState::InvalidLink
-                | PathState::ExistingDir => {
+                ExistingFile | ExistingLink | InvalidLink | ExistingDir => {
                     error!("destination {:?} already exists", &git_hooked_path);
                 }
-                PathState::Unknown => {
+                Unknown => {
                     error!("Unknown destination");
                 }
-                PathState::None => {
+                NonExisting => {
                     std::fs::rename(&git_hooks_path, &git_hooked_path)?;
                     info!("Creating symlink for {:?}..", &hook.name);
                     debug!("ln {0:?} -> {1:?}", &git_hooks_path, &git_hooked_path);
@@ -227,51 +214,27 @@ fn pull_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
                 }
             }
         }
-        PathState::ExistingLink | PathState::InvalidLink => {
+        ExistingLink | InvalidLink => {
             error!("source path {0:?} for hook {1:?} is a symbolic link and can therefore not be moved", &git_hooks_path, &hook.name);
         }
-        PathState::ExistingDir => {
+        ExistingDir => {
             error!(
                 "source path {0:?} for hook {1:?} is a directory and can therefore not be moved",
                 &git_hooks_path, &hook.name
             );
         }
-        PathState::None => {
+        NonExisting => {
             error!(
                 "source path {0:?} for hook {1:?} does not exist and can therefore not be moved",
                 &git_hooks_path, &hook.name
             );
         }
-        PathState::Unknown => {
+        Unknown => {
             error!("source path {0:?} for hook {1:?} is of unknown type and can therefore not be moved", &git_hooks_path, &hook.name);
         }
     }
 
     Ok(())
-}
-
-fn inspect_path(destination: &PathBuf) -> Result<PathState, Error> {
-    match std::fs::read_link(destination) {
-        Ok(path) => {
-            if path.exists() {
-                Ok(PathState::ExistingLink)
-            } else {
-                Ok(PathState::InvalidLink)
-            }
-        }
-        Err(_e) => match std::fs::metadata(destination) {
-            Ok(metadata) => {
-                if metadata.is_file() {
-                    Ok(PathState::ExistingFile)
-                } else if metadata.is_dir() {
-                    Ok(PathState::ExistingDir)
-                } else {
-                    Ok(PathState::Unknown)
-                }
-            }
-            Err(_e) => Ok(PathState::None),
-        },
-    }
 }
 
 fn git_hooked_path(root_path: &String, hook: Option<&Hook>) -> Result<PathBuf, Error> {
