@@ -32,8 +32,8 @@ struct Cli {
 
 #[derive(StructOpt, Debug)]
 enum Command {
-    Pull,
-    Push,
+    Fetch,
+    Init,
     Remove {
         #[structopt(possible_values = &HookType::variants(), case_insensitive = true, help = "What hooks should gitHooked remove ?")]
         hooks: Vec<HookType>,
@@ -51,8 +51,8 @@ fn main() -> Result<(), Error> {
     let config: Config = get_config(args.config, &root_path)?;
 
     match args.cmd {
-        Command::Push => hook::push(&config, &root_path)?,
-        Command::Pull => hook::pull(&config, &root_path)?,
+        Command::Init => hook::init(&config, &root_path)?,
+        Command::Fetch => hook::fetch(&config, &root_path)?,
         Command::Remove { hooks } => trace!("remove: {:?}", hooks),
     }
 

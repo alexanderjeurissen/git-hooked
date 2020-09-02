@@ -30,9 +30,9 @@ pub struct Hook {
     // NOTE: Specifies if incorrect symbolic links should be automatically overwritten
     #[serde(default = "default_true")]
     pub relink: bool,
-    // NOTE: Specifies if the hook should be tracked when running the pull command.
+    // NOTE: Specifies if the hook should be tracked when running the fetch command.
     #[serde(default = "default_true")]
-    pub pull: bool,
+    pub track: bool,
 }
 
 fn default_true() -> bool {
@@ -77,12 +77,12 @@ arg_enum! {
 }
 
 // NOTE: create symlinks for existing files in git_hooks folder
-pub fn push(config: &Config, root_path: &String) -> Result<(), Error> {
+pub fn init(config: &Config, root_path: &String) -> Result<(), Error> {
     match &config.hooks {
         Some(hooks) => {
             hooks
                 .into_iter()
-                .try_for_each(|hook: &Hook| push_hook(&root_path, &hook))?;
+                .try_for_each(|hook: &Hook| init_hook(&root_path, &hook))?;
         }
         None => {
             error!("No hooks defined in provide configuration file");
@@ -93,7 +93,7 @@ pub fn push(config: &Config, root_path: &String) -> Result<(), Error> {
 }
 
 // NOTE: copy over existing symlinks to the git_hooks folder
-pub fn pull(config: &Config, root_path: &String) -> Result<(), Error> {
+pub fn fetch(config: &Config, root_path: &String) -> Result<(), Error> {
     match &config.hooks {
         Some(hooks) => {
             let destination_path: PathBuf = git_hooked_path(&root_path, None)?;
@@ -110,12 +110,12 @@ pub fn pull(config: &Config, root_path: &String) -> Result<(), Error> {
 
                     hooks
                         .into_iter()
-                        .try_for_each(|hook: &Hook| pull_hook(&root_path, &hook))?;
+                        .try_for_each(|hook: &Hook| fetch_hook(&root_path, &hook))?;
                 }
                 ExistingDir => {
                     hooks
                         .into_iter()
-                        .try_for_each(|hook: &Hook| pull_hook(&root_path, &hook))?;
+                        .try_for_each(|hook: &Hook| fetch_hook(&root_path, &hook))?;
                 }
             }
         }
@@ -127,7 +127,7 @@ pub fn pull(config: &Config, root_path: &String) -> Result<(), Error> {
     Ok(())
 }
 
-fn push_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
+fn init_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
     if hook.create {
         let source_path: PathBuf = git_hooked_path(&root_path, Some(&hook))?;
         let destination_path: PathBuf = git_hooks_path(&root_path, &hook)?;
@@ -189,7 +189,7 @@ fn push_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
     Ok(())
 }
 
-fn pull_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
+fn fetch_hook(root_path: &String, hook: &Hook) -> Result<(), Error> {
     let git_hooks_path: PathBuf = git_hooks_path(&root_path, &hook)?;
     let git_hooked_path: PathBuf = git_hooked_path(&root_path, Some(&hook))?;
 
